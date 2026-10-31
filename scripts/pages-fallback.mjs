@@ -51,7 +51,9 @@ writeFileSync(join(dir, ".nojekyll"), "");
 const grokDir = join(dir, "__grok");
 const manifestPath = join(grokDir, "manifest.webmanifest");
 if (existsSync(grokDir) && !existsSync(manifestPath)) {
-  const base = "/mpd-360-pill-calculator/";
+  // Same rule as pagesBase() in vite.config.ts: BASE_PATH wins, trailing slash enforced.
+  const rawBase = process.env.BASE_PATH?.trim() || "/mpd-360-pill-calculator/";
+  const base = rawBase.endsWith("/") ? rawBase : `${rawBase}/`;
   writeFileSync(
     manifestPath,
     JSON.stringify({

@@ -1,5 +1,7 @@
 # PillView 1.0.4.0
 
+> **PillView-C** is a preview copy of [mpd-360-pill-calculator](https://github.com/cedanosergio11/mpd-360-pill-calculator) with the fixes from the Claude review (simulator trip tank fill, 10,000 ft well depth floor). Preview site: https://cedanosergio11.github.io/PillView-C/ — the live app below is the original.
+
 MPD 360 kill-weight-mud (KMW) **pill calculator** and interactive **wellbore simulator**.
 
 **Live:** https://cedanosergio11.github.io/mpd-360-pill-calculator/

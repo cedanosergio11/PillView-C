@@ -27,10 +27,14 @@ jobs:
           node-version: 20
       - name: Install
         run: npm install
+      - name: Test
+        run: npm test
       - name: Build Pages
         run: npm run build:pages
         env:
           GITHUB_PAGES: "1"
+          # Serve from this repo's own Pages path (e.g. /PillView-C/), not the original's.
+          BASE_PATH: /${{ github.event.repository.name }}/
       - name: Verify dist/client/index.html
         run: |
           if [ ! -f dist/client/index.html ]; then
