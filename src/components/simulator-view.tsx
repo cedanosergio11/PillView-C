@@ -42,6 +42,7 @@ export function SimulatorView({
       state.pipeKmwVolume,
       state.pipeChaseVolume,
       state.kmwBackfillRequired,
+      state.stringDrainedOnPull,
       state.casingMd,
       state.openHoleId,
       state.survey,

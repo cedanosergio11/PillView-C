@@ -41,10 +41,10 @@ export function geometryFromWell(inputs: WellInputs): SimGeometry {
   const spot = asNum(inputs.spotMd);
   const casing = asNum(inputs.casingMd);
   const anchor = asNum(inputs.anchorMd);
-  const wellDepth = Math.max(
-    ...[current, td, spot, casing, anchor].filter((n) => isNum(n) && n > 0),
-    DEFAULT_STATE.wellDepth,
-  );
+  // Deepest depth entered. The demo depth is only a fallback for a blank well, so a
+  // shallow well never gets hole below its real bottom.
+  const entered = [current, td, spot, casing, anchor].filter((n) => isNum(n) && n > 0);
+  const wellDepth = entered.length ? Math.max(...entered) : DEFAULT_STATE.wellDepth;
 
   const holeId = finite(
     asNum(inputs.idCasing),
@@ -215,6 +215,7 @@ export function composeWellState(
     pipeKmwVolume: Math.max(0, sim.pipeKmwVolume),
     pipeChaseVolume: Math.max(0, sim.pipeChaseVolume ?? 0),
     kmwBackfillRequired: Math.max(0, sim.kmwBackfillRequired ?? 0),
+    stringDrainedOnPull: Math.max(0, sim.stringDrainedOnPull ?? 0),
     survey: geometry.survey,
   };
 }

@@ -272,14 +272,14 @@ export function computeModel(state: WellState): PillModel {
   const kmwBackfillRequired = Math.max(0, state.kmwBackfillRequired ?? 0);
   const pullFt = Math.max(0, -pipeDelta);
   const runFt = Math.max(0, pipeDelta);
-  const steelOut = pullFt * steelBblPerFt(state);
-  const borePulled = pullFt * pipeBoreBblFt;
-  const dumpedIntoWell =
-    state.pipeEnd === "closed"
-      ? Math.min(borePulled, Math.max(0, pipeBoreBblFt * state.referencePipeDepth - pipeKmwInHole))
-      : 0;
-  const tripTankNet = steelOut - dumpedIntoWell;
-  const backfillVolume = state.autoBackfill && pullFt > 0 ? Math.max(steelOut, Math.abs(tripTankNet)) : 0;
+  // Hole volume balance. Moving the pipe Δ ft changes the hole by Δ × pipeBblPerFt
+  // (closed-end with a float, steel with open-end pipe). String fluid that drained
+  // out through the float stays in the hole, so the trip tank only makes up the rest:
+  //   fill = Δ × pipeBblPerFt − drained   (float holding, dry string: drained = 0)
+  const drainedFromString =
+    state.pipeEnd === "closed" ? Math.max(0, state.stringDrainedOnPull ?? 0) : 0;
+  const holeMakeUp = pullFt * pipeBblPerFt(state) - drainedFromString;
+  const backfillVolume = state.autoBackfill && pullFt > 0 ? Math.max(0, holeMakeUp) : 0;
   const kmwBackfillApplied =
     state.autoBackfill && pullFt > 0 ? Math.min(kmwBackfillRequired, backfillVolume) : 0;
   const mwFill = Math.max(0, backfillVolume - kmwBackfillApplied);
@@ -320,11 +320,13 @@ export function computeModel(state: WellState): PillModel {
                   : state.pipeEnd === "closed"
                     ? "Annulus · float / closed-end displacement"
                     : "Annulus · open-end displacement";
+  // Running back below placement: closed-end displacement comes back, plus anything
+  // that drained out of the string on an earlier pull (it is still in the hole).
   const tripTankGain =
-    state.autoBackfill && runFt > 0 ? runFt * pipeBblPerFt(state) : 0;
+    state.autoBackfill && runFt > 0 ? runFt * pipeBblPerFt(state) + drainedFromString : 0;
   const fluidDrop = state.autoBackfill
     ? 0
-    : depthForVolumeFromSurface(state, pullFt * pipeBblPerFt(state), state.pipeDepth);
+    : depthForVolumeFromSurface(state, Math.max(0, holeMakeUp), state.pipeDepth);
   const fillZoneVolume = state.autoBackfill ? mwFill : 0;
   const fillZoneDepth = depthForVolumeFromSurface(
     state,

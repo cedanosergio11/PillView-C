@@ -43,6 +43,8 @@ export type SimControls = {
   lastSyncKey: string;
   equalized: boolean;
   kmwBackfillRequired: number;
+  /** KMW + chase drained out of the string through the float since the pill was placed, bbl. */
+  stringDrainedOnPull: number;
 };
 
 type SimulatorStore = SimControls & {
@@ -81,6 +83,7 @@ function controlsFromPlacement(
     draftMw: placement.pillMw,
     pillError: "",
     geometryErr: "",
+    stringDrainedOnPull: 0,
     ...extras,
   };
 }
@@ -141,8 +144,11 @@ function applyPipeMove(
   let pillVolume = current.pillVolume;
   let placedPillTop = current.placedPillTop;
   let equalized = current.equalized;
+  let stringDrainedOnPull = current.stringDrainedOnPull ?? 0;
+  const atPlacement = Math.abs(current.pipeDepth - current.referencePipeDepth) < 1;
 
   if (closed && !equalized) {
+    const beforeKmw = pipeKmwVolume;
     const eq = balanceAtBit(
       state,
       current.pipeDepth,
@@ -158,6 +164,9 @@ function applyPipeMove(
     pillVolume = eq.pillVolume;
     placedPillTop = eq.placedPillTop;
     equalized = true;
+    // The U-tube at the placement depth happens before the trip starts, so it is not
+    // counted against trip tank fill. Off placement it is part of the trip.
+    if (!atPlacement) stringDrainedOnPull += Math.max(0, beforeKmw - eq.pipeKmwVolume);
   }
 
   const drainedMove = closed
@@ -171,6 +180,7 @@ function applyPipeMove(
     : { pipeKmwVolume, pipeChaseVolume, drained: 0, drainedChase: 0 };
   pipeKmwVolume = drainedMove.pipeKmwVolume;
   pipeChaseVolume = drainedMove.pipeChaseVolume;
+  stringDrainedOnPull += drainedMove.drained + drainedMove.drainedChase;
   if (drainedMove.drained > 0.0001) {
     pillVolume += drainedMove.drained;
     const { top } = topFromVolume(
@@ -183,6 +193,7 @@ function applyPipeMove(
   }
 
   if (closed) {
+    const beforeKmw = pipeKmwVolume;
     const eq = balanceAtBit(
       state,
       nextDepth,
@@ -197,12 +208,14 @@ function applyPipeMove(
     pipeChaseVolume = eq.pipeChaseVolume;
     pillVolume = eq.pillVolume;
     placedPillTop = eq.placedPillTop;
+    stringDrainedOnPull += Math.max(0, beforeKmw - eq.pipeKmwVolume);
   }
 
   set({
     pipeDepth: nextDepth,
     pipeKmwVolume,
     pipeChaseVolume,
+    stringDrainedOnPull,
     pillVolume,
     placedPillTop,
     draftTop: placedPillTop,
@@ -233,6 +246,7 @@ export const useSimulator = create<SimulatorStore>((set, get) => ({
   lastSyncKey: procedureSyncKey(SEED_INPUTS, SEED_RESULTS),
   equalized: false,
   kmwBackfillRequired: 0,
+  stringDrainedOnPull: 0,
 
   setPipeDepth: (depth, state) => {
     applyPipeMove(get, set, clamp(depth, 0, state.wellDepth), state);
@@ -307,6 +321,7 @@ export const useSimulator = create<SimulatorStore>((set, get) => ({
       pillMw: current.draftMw,
       draftVolume: volume,
       referencePipeDepth: state.pipeDepth,
+      stringDrainedOnPull: 0,
       pillError: "",
       geometryErr: "",
       dirty: true,
@@ -382,5 +397,6 @@ export function wellFromStores(inputs: WellInputs, sim: SimControls): WellState 
     pipeKmwVolume: sim.pipeKmwVolume,
     pipeChaseVolume: sim.pipeChaseVolume ?? 0,
     kmwBackfillRequired: sim.kmwBackfillRequired ?? 0,
+    stringDrainedOnPull: sim.stringDrainedOnPull ?? 0,
   });
 }

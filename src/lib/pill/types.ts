@@ -29,6 +29,12 @@ export type WellState = {
   pipeChaseVolume: number;
   /** KMW still needed after spotting, backfilled while POOH. */
   kmwBackfillRequired?: number;
+  /**
+   * KMW + chase that left the string through the float while the pipe moved
+   * away from the reference depth, bbl. It stays in the hole, so it offsets
+   * trip tank fill. The U-tube at the placement depth is not counted here.
+   */
+  stringDrainedOnPull?: number;
   /** MD/TVD pairs for hydrostatic (pressure uses TVD). */
   survey: SurveyPoint[];
 };
@@ -90,6 +96,7 @@ export const DEFAULT_STATE: WellState = {
   pipeKmwVolume: 0,
   pipeChaseVolume: 0,
   kmwBackfillRequired: 0,
+  stringDrainedOnPull: 0,
   survey: [],
 };
 
