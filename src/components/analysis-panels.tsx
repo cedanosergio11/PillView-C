@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { bbl, ft, ppg, ppg2, psi } from "@/components/fmt";
 import { emwAt, hydrostaticLayers, pressureAt, tvdFn } from "@/lib/pill/hydrostatic";
-import { volumeBelowDepth } from "@/lib/pill/physics";
+import { volumeBelowDepth, volumeBetweenMd } from "@/lib/pill/physics";
+import { capBblFt } from "@/lib/utils";
 import type { PillModel, WellState } from "@/lib/pill/types";
 
 function Panel({
@@ -21,47 +22,86 @@ function Panel({
 
 function Row({
   label,
+  detail,
   value,
 }: {
   label: string;
+  /** Geometry or basis behind the number, shown under the label. */
+  detail?: string;
   value: string;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-border py-2 last:border-b-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="font-mono text-xs tabular-nums text-foreground">{value}</span>
+      <span className="min-w-0 text-xs text-muted-foreground">
+        {label}
+        {detail ? <span className="block text-[11px] text-muted-foreground/70">{detail}</span> : null}
+      </span>
+      <span className="shrink-0 font-mono text-xs tabular-nums text-foreground">{value}</span>
     </div>
   );
 }
 
+const inch = (d: number) => `${Number(d.toFixed(3))} in`;
+
 export function AnalysisPanels({
   state,
   model,
+  anchorMd = null,
 }: {
   state: WellState;
   model: PillModel;
+  anchorMd?: number | null;
 }) {
   const layers = hydrostaticLayers(state, model);
   const toTvd = tvdFn(state);
   const volumeBelowPipe = volumeBelowDepth(state, state.pipeDepth, state.pipeDepth);
-  const annulusToPipe = model.annularBblFt * state.pipeDepth;
+  // Casing annulus down to the shoe, open-hole annulus below it, to the bit.
+  const annulusToPipe = volumeBetweenMd(state, 0, state.pipeDepth, state.pipeDepth);
+  const openHoleId = state.openHoleId ?? 0;
+  const hasOpenHole = openHoleId > 0 && (state.casingMd ?? 0) > 0;
+  // Depth order, with the casing shoe (FIT check) and anchor (target) when they are entered.
   const points = [
     { label: "Surface", depth: 0 },
     { label: "Pill top", depth: model.pillTop },
     { label: "Pill bottom", depth: model.pillBottom },
-    { label: "Pipe shoe", depth: state.pipeDepth },
+    { label: "Bit", depth: state.pipeDepth },
+    ...((state.casingMd ?? 0) > 0 && (state.casingMd ?? 0) < state.wellDepth
+      ? [{ label: "Casing shoe", depth: state.casingMd ?? 0 }]
+      : []),
+    ...(anchorMd != null && anchorMd > 0 && anchorMd < state.wellDepth
+      ? [{ label: "Anchor", depth: anchorMd }]
+      : []),
     { label: "TD", depth: state.wellDepth },
-  ];
+  ].sort((a, b) => a.depth - b.depth);
   const tdEmw = emwAt(state.wellDepth, layers, toTvd, state.baseMw);
 
   return (
     <div className="grid gap-3 lg:grid-cols-2">
       <Panel title="Volume balance">
-        <Row label="Annular capacity" value={`${model.annularBblFt.toFixed(4)} bbl/ft`} />
-        <Row label="Pipe displacement" value={`${model.pipeBblFt.toFixed(4)} bbl/ft`} />
-        <Row label="Open hole" value={`${model.openHoleBblFt.toFixed(4)} bbl/ft`} />
-        <Row label="Annulus to shoe" value={bbl(annulusToPipe)} />
-        <Row label="Open hole below shoe" value={bbl(volumeBelowPipe)} />
+        <Row
+          label="Annular capacity"
+          detail={`${inch(state.holeId)} × ${inch(state.pipeOd)} pipe`}
+          value={`${model.annularBblFt.toFixed(4)} bbl/ft`}
+        />
+        <Row
+          label="Pipe displacement"
+          detail={state.pipeEnd === "closed" ? "Closed end (float)" : "Open end, steel only"}
+          value={`${model.pipeBblFt.toFixed(4)} bbl/ft`}
+        />
+        <Row
+          label={hasOpenHole ? "Casing capacity" : "Hole capacity"}
+          detail={`${inch(state.holeId)}, no pipe`}
+          value={`${model.openHoleBblFt.toFixed(4)} bbl/ft`}
+        />
+        {hasOpenHole ? (
+          <Row
+            label="Open hole capacity"
+            detail={`${inch(openHoleId)}, no pipe`}
+            value={`${capBblFt(openHoleId).toFixed(4)} bbl/ft`}
+          />
+        ) : null}
+        <Row label="Annulus, surface to bit" value={bbl(annulusToPipe)} />
+        <Row label="Hole below bit" value={bbl(volumeBelowPipe)} />
         <Row label="Placed annular pill" value={bbl(model.annularKmwVolume)} />
         {model.kmwBackfillRequired > 0.5 ? (
           <Row

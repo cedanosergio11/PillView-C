@@ -19,12 +19,12 @@ function Stat({
   detail: string;
 }) {
   return (
-    <div className="min-w-0 rounded-lg border border-border bg-card px-4 py-3">
+    <div className="min-w-0 rounded-lg border border-border bg-card px-3 py-3 sm:px-4">
       <div className="text-xs font-medium tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-1 font-mono text-xl font-medium tracking-tight text-foreground tabular-nums">
+      <div className="mt-1 font-mono text-lg font-medium tracking-tight text-foreground tabular-nums sm:text-xl">
         {value}
       </div>
-      <div className="mt-1 truncate text-xs text-muted-foreground">{detail}</div>
+      <div className="mt-1 line-clamp-2 text-xs text-pretty text-muted-foreground sm:truncate">{detail}</div>
     </div>
   );
 }
@@ -32,22 +32,20 @@ function Stat({
 export function StatsStrip({ state, model, equalized = false, anchorMd = null }: Props) {
   const tripDetail =
     model.pipeDelta > 0
-      ? "Run below placement point"
+      ? `Run in · trip tank gain ${model.tripTankGain.toFixed(1)} bbl`
       : model.pipeDelta < 0
-        ? model.pipeDelta > 0
-          ? `Run in · trip tank gain ${model.tripTankGain.toFixed(1)} bbl`
-          : `Pulled · trip tank fill ${model.backfillVolume.toFixed(1)} bbl`
+        ? `Pulled · trip tank fill ${model.backfillVolume.toFixed(1)} bbl`
         : "At placement depth";
 
   const layers = hydrostaticLayers(state, model);
   const toTvd = tvdFn(state);
-  const emwDepth =
-    anchorMd != null && Number.isFinite(anchorMd) && anchorMd > 0 ? anchorMd : state.wellDepth;
+  const hasAnchor = anchorMd != null && Number.isFinite(anchorMd) && anchorMd > 0;
+  const emwDepth = hasAnchor ? anchorMd : state.wellDepth;
   const anchorEmw = emwAt(emwDepth, layers, toTvd, state.baseMw);
   const anchorPsi = pressureAt(emwDepth, layers, toTvd, state.baseMw);
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
       <Stat
         label="Annular pill"
         value={bbl(model.annularKmwVolume)}
@@ -72,7 +70,7 @@ export function StatsStrip({ state, model, equalized = false, anchorMd = null }:
         detail={tripDetail}
       />
       <Stat
-        label="Anchor point EMW"
+        label={hasAnchor ? "Anchor point EMW" : "TD EMW"}
         value={ppg2(anchorEmw)}
         detail={`${psi(anchorPsi)} at ${ft(emwDepth)}`}
       />

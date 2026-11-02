@@ -1,5 +1,7 @@
 import { useEffect } from "react";
-import { NumberField, Section, TextField } from "@/components/fields";
+import { NumberField, PairField, Section, TextField } from "@/components/fields";
+import { hasValue, requiredInputs, wellStarted } from "@/lib/calc/required";
+import type { WellInputs } from "@/lib/calc/types";
 import { ExcelPasteButton } from "@/components/excel-paste";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -13,10 +15,52 @@ import { formatNumber, isNum } from "@/lib/utils";
 import { TRIP_TABLES } from "@/lib/calc/tables";
 import { dPsi } from "@/components/fmt";
 
+const GEOMETRY_KEYS: (keyof WellInputs)[] = [
+  "currentDepthMd",
+  "anchorMd",
+  "anchorTvd",
+  "casingMd",
+  "casingTvd",
+  "spotMd",
+  "spotTvd",
+  "openHoleDia",
+  "idCasing",
+  "odDp",
+  "idDp",
+];
+const FLUID_KEYS: (keyof WellInputs)[] = [
+  "desiredEmw",
+  "currentMw",
+  "kmw",
+  "pumpDisp",
+  "sbpConnection",
+  "fit",
+  "maxFlowRate",
+];
+const OPERATIONAL_KEYS: (keyof WellInputs)[] = [
+  "desiredResolution",
+  "initialFlowRate",
+  "overbalanceSlug",
+  "safevisionNoSlug",
+  "topSlugBbl",
+];
+
 export function InputPanel() {
   const inputs = useAppStore((s) => s.inputs);
   const setField = useAppStore((s) => s.setField);
   const results = calculate(inputs);
+
+  // Required inputs get a marker. Blank ones are outlined only after the well has
+  // some values, so a new well is not covered in warnings.
+  const requiredKeys = new Set(requiredInputs(inputs).map((r) => r.key));
+  const started = wellStarted(inputs);
+  const isMissing = (key: keyof WellInputs) =>
+    started && requiredKeys.has(key) && !hasValue(inputs, key);
+  const req = (key: keyof WellInputs) => ({
+    required: requiredKeys.has(key),
+    missing: isMissing(key),
+  });
+  const missingIn = (keys: (keyof WellInputs)[]) => keys.filter(isMissing).length;
 
   // First paint stays date="" so prerendered HTML matches hydration.
   // The Chicago day is written only after persist rehydration, and only when the field is empty.
@@ -56,39 +100,52 @@ export function InputPanel() {
         </Field>
       </Section>
 
-      <Section title="Geometry">
-        <NumberField label="Current well depth" unit="ft MD" value={inputs.currentDepthMd} onChange={(v) => setField("currentDepthMd", v)} />
-        <NumberField label="Anchor / BOC" unit="ft MD" value={inputs.anchorMd} onChange={(v) => setField("anchorMd", v)} />
-        <NumberField label="Anchor / BOC" unit="ft TVD" value={inputs.anchorTvd} onChange={(v) => setField("anchorTvd", v)} />
-        <NumberField label="Casing depth" unit="ft MD" value={inputs.casingMd} onChange={(v) => setField("casingMd", v)} />
-        <NumberField label="Casing depth" unit="ft TVD" value={inputs.casingTvd} onChange={(v) => setField("casingTvd", v)} />
-        <NumberField label="Spot depth" unit="ft MD" value={inputs.spotMd} onChange={(v) => setField("spotMd", v)} />
-        <NumberField label="Spot depth" unit="ft TVD" value={inputs.spotTvd} onChange={(v) => setField("spotTvd", v)} />
-        <NumberField label="Open hole diameter" unit="in" value={inputs.openHoleDia} onChange={(v) => setField("openHoleDia", v)} />
-        <NumberField label="OD drill pipe" unit="in" value={inputs.odDp} onChange={(v) => setField("odDp", v)} />
-        <NumberField label="ID drill pipe" unit="in" value={inputs.idDp} onChange={(v) => setField("idDp", v)} />
-        <NumberField label="ID casing" unit="in" value={inputs.idCasing} onChange={(v) => setField("idCasing", v)} />
+      <Section title="Geometry" missingCount={missingIn(GEOMETRY_KEYS)}>
+        <NumberField label="Current well depth" unit="ft MD" value={inputs.currentDepthMd} onChange={(v) => setField("currentDepthMd", v)} {...req("currentDepthMd")} />
+        <PairField
+          label="Anchor / BOC"
+          left={{ unit: "ft MD", value: inputs.anchorMd, onChange: (v) => setField("anchorMd", v), ...req("anchorMd") }}
+          right={{ unit: "ft TVD", value: inputs.anchorTvd, onChange: (v) => setField("anchorTvd", v), ...req("anchorTvd") }}
+        />
+        <PairField
+          label="Casing depth"
+          left={{ unit: "ft MD", value: inputs.casingMd, onChange: (v) => setField("casingMd", v), ...req("casingMd") }}
+          right={{ unit: "ft TVD", value: inputs.casingTvd, onChange: (v) => setField("casingTvd", v), ...req("casingTvd") }}
+        />
+        <PairField
+          label="Spot depth"
+          left={{ unit: "ft MD", value: inputs.spotMd, onChange: (v) => setField("spotMd", v), ...req("spotMd") }}
+          right={{ unit: "ft TVD", value: inputs.spotTvd, onChange: (v) => setField("spotTvd", v), ...req("spotTvd") }}
+        />
+        <NumberField label="Open hole diameter" unit="in" value={inputs.openHoleDia} onChange={(v) => setField("openHoleDia", v)} {...req("openHoleDia")} />
+        <NumberField label="ID casing" unit="in" value={inputs.idCasing} onChange={(v) => setField("idCasing", v)} {...req("idCasing")} />
+        <PairField
+          label="Drill pipe"
+          left={{ unit: "OD in", value: inputs.odDp, onChange: (v) => setField("odDp", v), ...req("odDp") }}
+          right={{ unit: "ID in", value: inputs.idDp, onChange: (v) => setField("idDp", v), ...req("idDp") }}
+        />
       </Section>
 
-      <Section title="Fluid & pressure">
-        <NumberField label="Desired EMW @ anchor" unit="ppge" value={inputs.desiredEmw} onChange={(v) => setField("desiredEmw", v)} />
-        <NumberField label="Current MW" unit="ppg" value={inputs.currentMw} onChange={(v) => setField("currentMw", v)} />
-        <NumberField label="KMW" unit="ppg" value={inputs.kmw} onChange={(v) => setField("kmw", v)} />
-        <NumberField label="Pump displacement" unit="bbl/stk" value={inputs.pumpDisp} onChange={(v) => setField("pumpDisp", v)} step="0.0001" />
+      <Section title="Fluid & pressure" missingCount={missingIn(FLUID_KEYS)}>
+        <NumberField label="Desired EMW @ anchor" unit="ppge" value={inputs.desiredEmw} onChange={(v) => setField("desiredEmw", v)} {...req("desiredEmw")} />
+        <NumberField label="Current MW" unit="ppg" value={inputs.currentMw} onChange={(v) => setField("currentMw", v)} {...req("currentMw")} />
+        <NumberField label="KMW" unit="ppg" value={inputs.kmw} onChange={(v) => setField("kmw", v)} {...req("kmw")} />
+        <NumberField label="Pump displacement" unit="bbl/stk" value={inputs.pumpDisp} onChange={(v) => setField("pumpDisp", v)} step="0.0001" {...req("pumpDisp")} />
         <NumberField label="SBP on connection" unit="psi" value={inputs.sbpConnection} onChange={(v) => setField("sbpConnection", v)} />
         <NumberField label="FIT" unit="ppge" value={inputs.fit} onChange={(v) => setField("fit", v)} />
         <NumberField label="Max flow rate" unit="gpm" value={inputs.maxFlowRate} onChange={(v) => setField("maxFlowRate", v)} />
       </Section>
 
-      <Section title="Operational settings">
+      <Section title="Operational settings" missingCount={missingIn(OPERATIONAL_KEYS)}>
         <NumberField
           label="Desired resolution"
           unit="bbl"
           value={inputs.desiredResolution}
           onChange={(v) => setField("desiredResolution", v)}
           hint="20 bbl for 6.75 in hole, 30 bbl for 8.5 in. Use multiples of 5 or 10."
+          {...req("desiredResolution")}
         />
-        <NumberField label="Initial flow rate" unit="gpm" value={inputs.initialFlowRate} onChange={(v) => setField("initialFlowRate", v)} />
+        <NumberField label="Initial flow rate" unit="gpm" value={inputs.initialFlowRate} onChange={(v) => setField("initialFlowRate", v)} {...req("initialFlowRate")} />
         <NumberField
           label="Static stripping pressure"
           unit="psi"
@@ -109,6 +166,7 @@ export function InputPanel() {
           value={inputs.overbalanceSlug}
           onChange={(v) => setField("overbalanceSlug", v)}
           hint="Typically 200–300 psi. Leave 0 for a no-slug procedure."
+          {...req("overbalanceSlug")}
         />
         <NumberField
           label="SafeVision AP ECD (no slug)"
@@ -116,6 +174,7 @@ export function InputPanel() {
           value={inputs.safevisionNoSlug}
           onChange={(v) => setField("safevisionNoSlug", v)}
           hint="ECD at initial flow with RCD installed, bit at spot depth."
+          {...req("safevisionNoSlug")}
         />
         <NumberField
           label="SafeVision AP ECD (w/ slug)"

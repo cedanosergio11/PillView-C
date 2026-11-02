@@ -13,6 +13,7 @@ import {
 } from "./engine";
 import { calcEqualizeExtraPpg, calcNoDpPill, calcSlugAt200FtMin } from "./engine-nodp";
 import { DEPTH_BEYOND_TD, depthBeyondFields, depthBlockMessage } from "./depth";
+import { missingRequired } from "./required";
 
 function nanRecord<T extends object>(keys: (keyof T)[]): T {
   const out = {} as T;
@@ -270,26 +271,7 @@ export function collectWarnings(inputs: WellInputs, results: CalcResults): Warni
     ];
   }
   const warnings: WarningItem[] = [];
-  const required: [keyof WellInputs, string][] = [
-    ["anchorTvd", "Anchor point TVD"],
-    ["casingTvd", "Casing depth TVD"],
-    ["spotMd", "Spot depth MD"],
-    ["openHoleDia", "Open hole diameter"],
-    ["desiredEmw", "Desired EMW"],
-    ["currentMw", "Current MW"],
-    ["kmw", "KMW"],
-    ["idDp", "ID drill pipe"],
-    ["odDp", "OD drill pipe"],
-    ["idCasing", "ID casing"],
-    ["pumpDisp", "Pump displacement"],
-    ["desiredResolution", "Desired resolution"],
-    ["initialFlowRate", "Initial flow rate"],
-    ["safevisionNoSlug", "SafeVision AP ECD (no slug)"],
-  ];
-  if (inputs.pillMode === "withSlug") {
-    required.push(["overbalanceSlug", "Overbalance pressure for slug"]);
-  }
-  const missing = required.filter(([key]) => !isNum(n(inputs, key))).map(([, l]) => l);
+  const missing = missingRequired(inputs).map(({ label }) => label);
   if (missing.length) {
     warnings.push({ level: "error", text: `Missing required values: ${missing.join(", ")}.` });
   }

@@ -49,6 +49,22 @@ function clampScale(min: number, max: number) {
   return { min: lo, max: hi };
 }
 
+/**
+ * niceTicks always adds the range ends, which can land a label on top of the
+ * nearest round tick (5.0 next to 6.0, TD next to 18,000). Drop the crowded one:
+ * the end itself (`keepEnds: false`) or its neighbour (`keepEnds: true`).
+ */
+function spaceTicks(ticks: number[], keepEnds: boolean, minGapFraction = 0.6): number[] {
+  if (ticks.length < 4) return ticks;
+  let step = 0;
+  for (let i = 1; i < ticks.length; i += 1) step = Math.max(step, ticks[i] - ticks[i - 1]);
+  const out = [...ticks];
+  if (out[1] - out[0] < step * minGapFraction) out.splice(keepEnds ? 1 : 0, 1);
+  const n = out.length;
+  if (out[n - 1] - out[n - 2] < step * minGapFraction) out.splice(keepEnds ? n - 2 : n - 1, 1);
+  return out;
+}
+
 function fitScale(emws: number[], baseMw: number, pillMw: number, extras: number[] = []) {
   const values = [...emws, baseMw, pillMw, ...extras].filter((n) => Number.isFinite(n));
   const lo = Math.min(...values);
@@ -85,8 +101,9 @@ export function EmwProfile({
   );
 
   const scale = clampScale(emwMin, emwMax);
-  const xTicks = niceTicks(scale.min, scale.max, 5);
-  const yTicks = niceTicks(0, state.wellDepth, 8);
+  const xTicks = spaceTicks(niceTicks(scale.min, scale.max, 5), false);
+  const yTicks = spaceTicks(niceTicks(0, state.wellDepth, 8), true);
+  const deviated = state.survey.some((p) => p.md - p.tvd > 1);
 
   const xFor = (emw: number) => {
     const t = (emw - scale.min) / (scale.max - scale.min);
@@ -154,6 +171,17 @@ export function EmwProfile({
         ? toTvd(anchorMd)
         : 0;
   const anchorEmw = showAnchor && anchorMd != null ? emwAt(anchorMd, layers, toTvd, state.baseMw) : null;
+  // Depth lines are labelled where they cross the plot. The legend lists only the
+  // lines whose in-plot label had to be hidden for space.
+  const bitLabelShown = shoeY < tdY - 18 && shoeY > PLOT_TOP + 70;
+  const anchorLabelShown =
+    anchorY != null && Math.abs(anchorY - shoeY) >= 16 && anchorY < tdY - 18 && anchorY > PLOT_TOP + 70;
+  const casingLabelShown =
+    casingY != null &&
+    Math.abs(casingY - shoeY) >= 16 &&
+    (anchorY == null || Math.abs(casingY - anchorY) >= 16) &&
+    casingY < tdY - 18 &&
+    casingY > PLOT_TOP + 70;
   const anchorPsi =
     showAnchor && anchorMd != null ? pressureAt(anchorMd, layers, toTvd, state.baseMw) : null;
 
@@ -354,14 +382,17 @@ export function EmwProfile({
             className="emw-frame"
           />
 
+          {/* Axis titles sit above the plot so they never cross the tick labels. */}
+          <text x={PLOT_LEFT - 8} y={PLOT_TOP - 28} textAnchor="end" className="wb-muted-label emw-axis-title">
+            MD, ft
+          </text>
           <text
-            x="16"
-            y={(PLOT_TOP + PLOT_BOTTOM) / 2}
+            x={(PLOT_LEFT + PLOT_RIGHT) / 2}
+            y={PLOT_TOP - 28}
             textAnchor="middle"
-            className="wb-muted-label"
-            transform={`rotate(-90 16 ${(PLOT_TOP + PLOT_BOTTOM) / 2})`}
+            className="wb-muted-label emw-axis-title"
           >
-            MD (ft)
+            EMW, ppg
           </text>
 
           <g clipPath={`url(#${clipId})`}>
@@ -482,7 +513,7 @@ export function EmwProfile({
             </g>
           ) : null}
 
-          {shoeY < tdY - 18 && shoeY > PLOT_TOP + 70 ? (
+          {bitLabelShown ? (
             <text
               x={PLOT_LEFT + 8}
               y={shoeY - 5}
@@ -492,24 +523,17 @@ export function EmwProfile({
             </text>
           ) : null}
 
-          {anchorY != null &&
-          Math.abs(anchorY - shoeY) >= 16 &&
-          anchorY < tdY - 18 &&
-          anchorY > PLOT_TOP + 70 ? (
+          {anchorLabelShown ? (
             <text
               x={PLOT_LEFT + 8}
-              y={anchorY - 5}
+              y={(anchorY ?? 0) - 5}
               className="wb-anchor-label"
             >
               Anchor {dFt(anchorMd ?? 0)}
             </text>
           ) : null}
 
-          {casingY != null &&
-          Math.abs(casingY - shoeY) >= 16 &&
-          (anchorY == null || Math.abs(casingY - anchorY) >= 16) &&
-          casingY < tdY - 18 &&
-          casingY > PLOT_TOP + 70 ? (
+          {casingLabelShown ? (
             <text
               x={PLOT_LEFT + 8}
               y={casingY - 5}
@@ -538,35 +562,6 @@ export function EmwProfile({
               <circle cx={tipX} cy={tipY} r="4" className="emw-probe-dot" />
             </g>
           ) : null}
-
-          <g transform={`translate(${PLOT_LEFT + 10} ${PLOT_TOP + 14})`}>
-            <rect
-              width="148"
-              height={anchorEmw != null ? 70 : 54}
-              rx="4"
-              className="emw-legend-bg"
-            />
-            <line x1="8" x2="26" y1="12" y2="12" className="emw-curve" />
-            <text x="32" y="15" className="wb-muted-label">
-              Static EMW
-            </text>
-            <line x1="8" x2="26" y1="28" y2="28" className="emw-local" />
-            <text x="32" y="31" className="wb-muted-label">
-              Local MW
-            </text>
-            <line x1="8" x2="26" y1="44" y2="44" className="emw-td" />
-            <text x="32" y="47" className="wb-muted-label">
-              TD · {ppg2(tdEmw)}
-            </text>
-            {anchorEmw != null ? (
-              <>
-                <line x1="8" x2="26" y1="60" y2="60" className="emw-anchor" />
-                <text x="32" y="63" className="wb-muted-label">
-                  Anchor · {ppg2(anchorEmw)}
-                </text>
-              </>
-            ) : null}
-          </g>
 
           <rect
             x={PLOT_LEFT}
@@ -611,20 +606,27 @@ export function EmwProfile({
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap justify-center gap-4 text-xs text-muted-foreground">
-        <LegendSwatch className="bg-pill" label="Static EMW" dashed={false} />
-        <LegendSwatch className="bg-warn" label="Local fluid MW" dashed />
-        <LegendSwatch className="bg-pipe" label="Pipe shoe" dashed />
-        {desiredEmw != null ? <LegendSwatch className="bg-primary" label="Target EMW" dashed /> : null}
-        {fit != null ? <LegendSwatch className="bg-destructive" label="FIT" dashed /> : null}
-        <LegendSwatch className="bg-danger" label={`TD · ${ppg2(tdEmw)}`} dashed={false} />
-        {anchorEmw != null ? (
-          <LegendSwatch className="bg-primary" label={`Anchor · ${ppg2(anchorEmw)}`} dashed />
+      <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+        <LegendSwatch lineClass="emw-curve" label="Static EMW" />
+        <LegendSwatch lineClass="emw-local" label="Local fluid MW" />
+        {desiredEmw != null ? (
+          <LegendSwatch lineClass="emw-ref-target" label={`Target EMW ${dEmw(desiredEmw)} ppge`} />
+        ) : null}
+        {fit != null ? <LegendSwatch lineClass="emw-ref-fit" label={`FIT ${dEmw(fit)} ppge`} /> : null}
+        {!bitLabelShown ? <LegendSwatch lineClass="emw-shoe" label={`Bit ${dFt(state.pipeDepth)} ft`} /> : null}
+        {anchorY != null && !anchorLabelShown ? (
+          <LegendSwatch lineClass="emw-anchor" label={`Anchor ${dFt(anchorMd ?? 0)} ft`} />
+        ) : null}
+        {casingY != null && !casingLabelShown ? (
+          <LegendSwatch lineClass="wb-casing-line" label={`Casing shoe ${dFt(casingMd ?? 0)} ft`} />
         ) : null}
       </div>
       <p className="mt-3 text-center text-xs text-pretty text-muted-foreground">
-        EMW = hydrostatic pressure / (0.052 × TVD). Vertical well, no circulating
-        ECD or surface backpressure. Hover either track to inspect. Not for
+        EMW = hydrostatic pressure / (0.052 × TVD).{" "}
+        {deviated
+          ? "TVD is interpolated from the MD/TVD pairs on the inputs."
+          : "Vertical well: no TVD below MD is entered."}{" "}
+        No circulating ECD or surface backpressure. Hover either track to inspect. Not for
         operational decisions.
       </p>
       <p className="sr-only">
@@ -639,24 +641,13 @@ export function EmwProfile({
   );
 }
 
-function LegendSwatch({
-  className,
-  label,
-  dashed,
-}: {
-  className: string;
-  label: string;
-  dashed?: boolean;
-}) {
+/** Legend sample drawn with the same stroke class as the plotted line, so dashes and colours match. */
+function LegendSwatch({ lineClass, label }: { lineClass: string; label: string }) {
   return (
     <span className="inline-flex items-center gap-2">
-      <span
-        className={cn(
-          "h-0.5 w-4 rounded-sm",
-          className,
-          dashed && "opacity-80",
-        )}
-      />
+      <svg width="22" height="8" viewBox="0 0 22 8" aria-hidden="true" className="shrink-0 overflow-visible">
+        <line x1="1" x2="21" y1="4" y2="4" className={lineClass} />
+      </svg>
       {label}
     </span>
   );

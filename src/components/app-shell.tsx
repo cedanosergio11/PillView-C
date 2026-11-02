@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   Download,
@@ -63,6 +63,103 @@ const TABS: { id: WorkspaceTab; label: string }[] = [
   { id: "rp13d", label: "RP 13D" },
 ];
 
+/** Other names people use for a tab in a link (`?tab=well`). */
+const TAB_ALIASES: Record<string, WorkspaceTab> = { well: "simulator", sim: "simulator", "rp-13d": "rp13d" };
+
+function tabFromUrl(): WorkspaceTab | null {
+  if (typeof window === "undefined") return null;
+  const raw = (
+    window.location.hash.slice(1) || new URLSearchParams(window.location.search).get("tab") || ""
+  ).toLowerCase();
+  const id = TAB_ALIASES[raw] ?? raw;
+  return TABS.some((t) => t.id === id) ? (id as WorkspaceTab) : null;
+}
+
+/**
+ * Tabs have links: `#procedure` (or `?tab=procedure`) opens that tab, and picking a
+ * tab writes its name to the address so it can be bookmarked or sent. The address is
+ * left alone until the first tab change, so a plain link stays plain.
+ */
+function useTabLink(tab: WorkspaceTab, setTab: (tab: WorkspaceTab) => void) {
+  const loaded = useRef(false);
+  useEffect(() => {
+    const apply = () => {
+      const fromUrl = tabFromUrl();
+      if (fromUrl) setTab(fromUrl);
+    };
+    apply();
+    window.addEventListener("hashchange", apply);
+    return () => window.removeEventListener("hashchange", apply);
+  }, [setTab]);
+  useEffect(() => {
+    if (!loaded.current) {
+      loaded.current = true;
+      return;
+    }
+    if (window.location.hash.slice(1) === tab) return;
+    try {
+      window.history.replaceState(window.history.state, "", `#${tab}`);
+    } catch {
+      // Some embedded views refuse history writes; the tab still works.
+    }
+  }, [tab]);
+}
+
+/** Tab strip. On a narrow screen it scrolls sideways and fades at the edge while more tabs are hidden. */
+function WorkspaceTabs({ tab, onSelect }: { tab: WorkspaceTab; onSelect: (tab: WorkspaceTab) => void }) {
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [moreRight, setMoreRight] = useState(false);
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    const update = () => setMoreRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      el.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+  useEffect(() => {
+    stripRef.current
+      ?.querySelector<HTMLElement>(`[data-workspace-tab="${tab}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [tab]);
+  return (
+    <div className="relative">
+      <nav
+        ref={stripRef}
+        aria-label="Workspace"
+        className="flex gap-1 overflow-x-auto overscroll-x-contain rounded-xl bg-muted p-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onSelect(t.id)}
+            data-workspace-tab={t.id}
+            aria-current={tab === t.id ? "page" : undefined}
+            className={
+              tab === t.id
+                ? "min-h-11 shrink-0 rounded-lg bg-background px-3 py-2 text-sm font-medium shadow-sm ring-1 ring-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+                : "min-h-11 shrink-0 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-background/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+            }
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+      {moreRight ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 w-10 rounded-r-xl bg-gradient-to-l from-muted to-transparent"
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export function AppShell() {
   const inputs = useAppStore((s) => s.inputs);
   const tabRaw = useAppStore((s) => s.tab);
@@ -80,6 +177,8 @@ export function AppShell() {
   const [saveName, setSaveName] = useState("");
   const [notesOpen, setNotesOpen] = useState(false);
   const [printFitOpen, setPrintFitOpen] = useState(false);
+
+  useTabLink(tab, setTab);
 
   const results = useMemo(() => calculate(inputs), [inputs]);
   const schedule = useMemo(() => buildSchedule(inputs, results), [inputs, results]);
@@ -132,8 +231,10 @@ export function AppShell() {
         className="print:hidden"
         toastOptions={{ className: "border-border bg-card text-card-foreground" }}
       />
-      <div className="flex min-h-dvh flex-col bg-background text-foreground">
-        <header className="print:hidden sticky top-0 z-30 border-b border-border bg-background/90 pt-[env(safe-area-inset-top)] backdrop-blur">
+      {/* Desktop: the shell is one screen tall, so the inputs and the workspace scroll on
+          their own and results stay in view while you edit. Phones scroll the page. */}
+      <div className="flex min-h-dvh flex-col bg-background text-foreground lg:h-dvh lg:overflow-hidden print:h-auto print:overflow-visible">
+        <header className="print:hidden sticky top-0 z-30 shrink-0 border-b border-border bg-background/90 pt-[env(safe-area-inset-top)] backdrop-blur">
           <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4">
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setDrawer(true)} aria-label="Open inputs">
               <Menu />
@@ -244,7 +345,7 @@ export function AppShell() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="secondary" size="icon" className="hidden sm:inline-flex" aria-label="Export CSV" onClick={exportCsv}>
+                  <Button variant="secondary" size="icon" className="hidden sm:inline-flex" aria-label="Export CSV" data-action="export-csv" onClick={exportCsv}>
                     <Download />
                   </Button>
                 </TooltipTrigger>
@@ -252,7 +353,7 @@ export function AppShell() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="default" size="sm" onClick={requestPrint}>
+                  <Button variant="default" size="sm" data-action="print" onClick={requestPrint}>
                     <Printer />
                     <span className="hidden sm:inline">Print</span>
                   </Button>
@@ -301,7 +402,7 @@ export function AppShell() {
         </header>
 
         <div className="flex min-h-0 flex-1">
-          <aside className="print:hidden hidden w-[22rem] shrink-0 overflow-y-auto border-r border-border bg-card lg:block">
+          <aside className="print:hidden relative hidden w-[22rem] shrink-0 overflow-y-auto border-r border-border bg-card lg:block">
             <div className="sticky top-0 z-10 border-b border-border bg-card px-4 py-3">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Inputs</div>
               <div className="mt-0.5 truncate text-sm font-medium">{inputs.wellName || "New well"}</div>
@@ -309,12 +410,15 @@ export function AppShell() {
             <InputPanel />
           </aside>
 
-          <main className="min-w-0 flex-1 overflow-y-auto">
+          {/* `relative` makes the panel the containing block for absolutely positioned
+              children (screen-reader text, chart tooltips), so they scroll and clip with it
+              instead of stretching the page below the one-screen shell. */}
+          <main className="relative min-w-0 flex-1 overflow-y-auto print:static print:overflow-visible">
             <div className="print:hidden mx-auto max-w-[92rem] space-y-4 px-3 py-4 sm:px-6">
               <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                    {inputs.client || "Client"} · {inputs.date}
+                <div className="min-w-0">
+                  <p className="min-h-4 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                    {[inputs.client, inputs.date].filter(Boolean).join(" · ")}
                   </p>
                   <h1 className="text-xl font-semibold tracking-tight text-balance sm:text-3xl">
                     {inputs.wellName || "Pill procedure"}
@@ -323,44 +427,37 @@ export function AppShell() {
                 <div className="flex flex-col items-end gap-0.5 text-xs text-muted-foreground">
                   <button
                     type="button"
-                    className="font-mono tabular-nums tracking-wide hover:text-foreground"
+                    className="rounded-sm font-mono tabular-nums tracking-wide hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
                     onClick={() => setNotesOpen(true)}
                     aria-label="Open release notes"
                   >
                     {formatVersion()}
                   </button>
-                  <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTab("audit")}
+                    className={
+                      errorCount
+                        ? "flex items-center gap-1.5 rounded-sm font-medium text-warn underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+                        : "flex items-center gap-1.5 rounded-sm underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+                    }
+                    title="Open the Audit tab"
+                  >
                     <FileText className="size-3.5" />
                     {errorCount ? `${errorCount} issue${errorCount === 1 ? "" : "s"} to review` : "Ready for review"}
-                  </div>
+                  </button>
                 </div>
               </div>
 
               {tab === "simulator" || tab === "rp13d" ? null : <KpiBar inputs={inputs} results={results} />}
 
-              <div className="flex gap-1 overflow-x-auto overscroll-x-contain rounded-xl bg-muted p-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {TABS.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setTab(t.id)}
-                    data-workspace-tab={t.id}
-                    className={
-                      tab === t.id
-                        ? "min-h-11 shrink-0 rounded-lg bg-background px-3 py-2 text-sm font-medium shadow-sm"
-                        : "min-h-11 shrink-0 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
-                    }
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
+              <WorkspaceTabs tab={tab} onSelect={setTab} />
 
               {tab !== "rp13d" && results.depthBlock ? (
                 <DepthBlockPanel fields={results.depthBlock.fields} />
               ) : null}
               {tab === "simulator" ? (
-                <SimulatorView inputs={inputs} results={results} />
+                <SimulatorView inputs={inputs} results={results} onOpenInputs={() => setDrawer(true)} />
               ) : null}
               {tab === "procedure" ? (
                 <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">

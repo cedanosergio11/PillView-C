@@ -638,9 +638,10 @@ export function WellboreSchematic({
               y2={casingY}
               className="wb-casing-line"
             />
+            {/* "Csg" keeps a five-digit depth inside the 440-unit viewBox on a phone. */}
             {farFrom(casingY + 4, [pipeBottomY + 4, ...(anchorY != null ? [anchorY + 4] : [])], LABEL_GAP) ? (
               <text x="332" y={casingY + 4} className="wb-casing-label">
-                Csg shoe {ft(casingMd ?? 0)}
+                Csg {ft(casingMd ?? 0)}
               </text>
             ) : null}
           </g>

@@ -660,6 +660,15 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   stroke: var(--color-background);
   stroke-width: 1.5;
 }
+.emw-axis-title {
+  letter-spacing: 0.04em;
+}
+/* On a phone the plots scale down to ~0.8×; lift the tick labels back to a readable size. */
+@media (max-width: 639px) {
+  .emw-svg .wb-muted-label {
+    font-size: 12px;
+  }
+}
 .emw-legend-bg {
   fill: color-mix(in oklab, var(--color-card) 88%, transparent);
   stroke: color-mix(in oklab, var(--color-foreground) 12%, transparent);

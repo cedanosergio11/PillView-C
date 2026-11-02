@@ -11,13 +11,22 @@ import { bbl, ft } from "@/components/fmt";
 import { asNum, formatNumber, isNum } from "@/lib/utils";
 import { dBbl } from "@/components/fmt";
 import { DepthBlockPanel } from "@/components/depth-block";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { missingForSimulator } from "@/lib/calc/required";
+import { PRESETS } from "@/lib/calc/examples";
+import { presentPresets } from "@/lib/present-presets";
+import { useAppStore } from "@/lib/store";
 
 export function SimulatorView({
   inputs,
   results,
+  onOpenInputs,
 }: {
   inputs: WellInputs;
   results: CalcResults;
+  /** Opens the inputs drawer on screens where the inputs panel is hidden. */
+  onOpenInputs?: () => void;
 }) {
   const sim = useSimulator();
   const state = wellFromStores(inputs, sim);
@@ -76,6 +85,12 @@ export function SimulatorView({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [state.wellDepth]);
+
+  // Without these the simulator would draw a default well, so say what is missing instead.
+  const missing = missingForSimulator(inputs);
+  if (missing.length) {
+    return <SimulatorEmpty missing={missing} onOpenInputs={onOpenInputs} />;
+  }
 
   if (!run.ok) {
     return (
@@ -173,7 +188,7 @@ export function SimulatorView({
       </div>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,22rem)_1fr]">
         <SimPlacePanel state={state} />
-        <AnalysisPanels state={state} model={model} />
+        <AnalysisPanels state={state} model={model} anchorMd={anchorMd} />
       </div>
       {programTop != null ? (
         <p className="text-xs text-muted-foreground">
@@ -192,6 +207,83 @@ export function SimulatorView({
           : `Trip tank fill ${bbl(model.backfillVolume)}.`}
       </p>
     </div>
+  );
+}
+
+const EXAMPLE_PRESET = presentPresets(PRESETS).find((p) => p.id === "example-1");
+
+function SimulatorEmpty({
+  missing,
+  onOpenInputs,
+}: {
+  missing: string[];
+  onOpenInputs?: () => void;
+}) {
+  return (
+    <section
+      data-simulator-empty
+      className="grid items-center gap-6 rounded-xl border border-border bg-card p-5 sm:grid-cols-[auto_minmax(0,1fr)] sm:p-8"
+    >
+      <EmptyWellGlyph className="mx-auto hidden h-44 w-28 sm:block" />
+      <div className="min-w-0">
+        <h2 className="text-lg font-semibold tracking-tight text-balance">No well to simulate yet</h2>
+        <p className="mt-1 max-w-prose text-sm text-pretty text-muted-foreground">
+          The simulator places the pill from your inputs. Enter these values, paste them from
+          the Excel sheet, or load a workbook example.
+        </p>
+        <ul className="mt-4 flex flex-wrap gap-1.5" aria-label="Missing inputs">
+          {missing.map((label) => (
+            <li
+              key={label}
+              className="rounded-full border border-warn/40 bg-warn/10 px-2.5 py-1 text-xs text-warn"
+            >
+              {label}
+            </li>
+          ))}
+        </ul>
+        <div className="mt-5 flex flex-wrap gap-2">
+          {EXAMPLE_PRESET ? (
+            <Button
+              onClick={() => {
+                useAppStore.getState().loadPreset(EXAMPLE_PRESET.inputs);
+                toast.success(`Loaded ${EXAMPLE_PRESET.label}`);
+              }}
+            >
+              Load EXAMPLE 1
+            </Button>
+          ) : null}
+          {onOpenInputs ? (
+            <Button variant="secondary" className="lg:hidden" onClick={onOpenInputs}>
+              Open inputs
+            </Button>
+          ) : null}
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          The other workbook examples are under Load well.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/** An empty hole with the pipe pulled: formation on both sides, no fluid column drawn. */
+function EmptyWellGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 112 176" className={className} aria-hidden="true">
+      <rect x="0" y="12" width="30" height="164" className="fill-formation" />
+      <rect x="82" y="12" width="30" height="164" className="fill-formation" />
+      <rect x="30" y="12" width="52" height="164" className="fill-fluid/25" />
+      <rect x="30" y="12" width="4" height="96" className="fill-muted-foreground/50" />
+      <rect x="78" y="12" width="4" height="96" className="fill-muted-foreground/50" />
+      <line x1="0" x2="112" y1="12" y2="12" className="stroke-foreground" strokeWidth="2" />
+      <path
+        d="M47 30 v86 M65 30 v86"
+        className="stroke-pipe/60"
+        strokeWidth="2"
+        strokeDasharray="4 5"
+        fill="none"
+      />
+    </svg>
   );
 }
 
