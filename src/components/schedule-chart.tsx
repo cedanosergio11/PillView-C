@@ -26,7 +26,19 @@ function niceMax(value: number) {
   return nice * mag;
 }
 
-export function ScheduleSbpChart({ rows }: { rows: ScheduleRow[] }) {
+export function ScheduleSbpChart({
+  rows,
+  marker = null,
+  bare = false,
+  title = "SBP vs pump strokes",
+}: {
+  rows: ScheduleRow[];
+  /** Strokes pumped so far during playback; draws a cursor at the SBP being held. */
+  marker?: number | null;
+  /** Drop the card frame when the chart sits inside another card. */
+  bare?: boolean;
+  title?: string;
+}) {
   const points = useMemo(
     () =>
       rows.map((row) => ({
@@ -81,11 +93,16 @@ export function ScheduleSbpChart({ rows }: { rows: ScheduleRow[] }) {
 
   if (!points.length) return null;
   const active = hover != null ? points[hover] : null;
+  // SBP held at the marker: step 1's until its strokes are reached, then the last step reached.
+  const held =
+    marker != null
+      ? points.reduce((acc, p) => (p.strokes <= marker + 1e-6 ? p : acc), points[0])
+      : null;
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-4">
+    <section className={bare ? "" : "rounded-2xl border border-border bg-card p-4"}>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold">SBP vs pump strokes</h3>
+        <h3 className="text-sm font-semibold">{title}</h3>
         <span className="text-[11px] text-muted-foreground">
           {active
             ? `Step ${active.step} · ${dStk(active.strokes)} stk · ${active.open ? "Open choke" : `${dPsi(active.sbp)} psi`}`
@@ -135,6 +152,12 @@ export function ScheduleSbpChart({ rows }: { rows: ScheduleRow[] }) {
             y2={B}
             className="wb-hover"
           />
+        ) : null}
+        {marker != null && held ? (
+          <g data-sbp-marker>
+            <line x1={xFor(marker)} x2={xFor(marker)} y1={T} y2={B} className="sbp-marker" />
+            <circle cx={xFor(marker)} cy={yFor(held.sbp)} r="5" className="sbp-marker-dot" />
+          </g>
         ) : null}
         <text x={(L + R) / 2} y={VH - 4} textAnchor="middle" className="sbp-axis">
           Pump strokes

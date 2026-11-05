@@ -61,7 +61,8 @@ export function simulate(
   return { ok: true, steps, models };
 }
 
-function placedState(inputs: WellInputs, results: CalcResults): WellState {
+/** The procedure's as-pumped placement: closed-end string at spot depth, trip tank on. */
+export function placedState(inputs: WellInputs, results: CalcResults): WellState {
   const geometry = geometryFromWell(inputs);
   const placed = pillFromProcedure(inputs, results, geometry, "closed");
   return composeWellState(inputs, {

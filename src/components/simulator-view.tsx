@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Well3DView } from "@/components/well-3d-view";
+
+const DIAGRAM_KEY = "pillview.simDiagram";
 import { AnalysisPanels } from "@/components/analysis-panels";
 import { EmwProfile } from "@/components/emw-profile";
 import { SimPlacePanel, SimToolbar } from "@/components/sim-controls";
@@ -58,6 +61,23 @@ export function SimulatorView({
     ],
   );
   const [probeDepth, setProbeDepth] = useState<number | null>(null);
+  // 3D is the default diagram; Section is the 2D view that lines up with the EMW track.
+  const [diagram, setDiagramState] = useState<"3d" | "section">(() => {
+    try {
+      return window.localStorage.getItem(DIAGRAM_KEY) === "section" ? "section" : "3d";
+    } catch {
+      return "3d";
+    }
+  });
+  const setDiagram = useCallback((next: "3d" | "section") => {
+    setDiagramState(next);
+    try {
+      window.localStorage.setItem(DIAGRAM_KEY, next);
+    } catch {
+      // Storage can be blocked; the choice still holds for this visit.
+    }
+  }, []);
+  const showSection = useCallback(() => setDiagramState("section"), []);
 
   useEffect(() => {
     useSimulator.getState().syncFromCalc(inputs, results);
@@ -134,11 +154,43 @@ export function SimulatorView({
       <div className="grid min-w-0 items-start gap-4 sm:grid-cols-2">
         <div className="min-w-0 overflow-x-auto rounded-xl border border-border bg-card p-3 sm:p-4">
           <div className="mb-2 flex min-h-11 flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-medium tracking-wide text-foreground">Wellbore</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-medium tracking-wide text-foreground">Wellbore</h2>
+              <div className="inline-flex rounded-md bg-muted p-0.5 text-xs" role="group" aria-label="Diagram">
+                {(["3d", "section"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setDiagram(v)}
+                    aria-pressed={diagram === v}
+                    data-diagram={v}
+                    className={
+                      diagram === v
+                        ? "rounded px-2.5 py-1 font-medium bg-background text-foreground shadow-sm"
+                        : "rounded px-2.5 py-1 text-muted-foreground hover:text-foreground"
+                    }
+                  >
+                    {v === "3d" ? "3D" : "Section"}
+                  </button>
+                ))}
+              </div>
+            </div>
             <span className="text-xs text-muted-foreground">
               {state.pipeEnd === "closed" ? "Float · pump down only" : "Open-end pipe"}
             </span>
           </div>
+          {diagram === "3d" ? (
+            <Well3DView
+              inputs={inputs}
+              results={results}
+              state={state}
+              model={model}
+              anchorMd={anchorMd}
+              casingMd={casingMd}
+              onUnavailable={showSection}
+            />
+          ) : (
+          <>
           <WellboreSchematic
             state={state}
             model={model}
@@ -173,6 +225,8 @@ export function SimulatorView({
                 : "As pumped: float holds leftover KMW in the pipe. The annular pill uses annular capacity, so its top matches the no-DP program top."}{" "}
             Not for operational decisions.
           </p>
+          </>
+          )}
         </div>
         <EmwProfile
           state={state}

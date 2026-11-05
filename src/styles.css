@@ -701,6 +701,38 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   stroke: var(--color-foreground);
   stroke-width: 1.6;
 }
+/* Playback cursor on the SBP chart. */
+.sbp-marker {
+  stroke: var(--color-pill);
+  stroke-width: 1.4;
+}
+.sbp-marker-dot {
+  fill: var(--color-pill);
+  stroke: var(--color-card);
+  stroke-width: 2;
+}
+
+/* 3D well view: labels that follow the projected well path. */
+.w3-lbl {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-family: var(--font-mono, "IBM Plex Mono", ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
+  text-shadow: 0 0 3px var(--color-background), 0 0 6px var(--color-background);
+  will-change: transform;
+}
+.w3-lbl b {
+  color: var(--color-foreground);
+  font-weight: 500;
+}
+.w3-lbl[data-tone="pill"],
+.w3-lbl[data-tone="pill"] b {
+  color: var(--color-pill);
+}
 .sbp-dot-open {
   fill: var(--color-card);
   stroke: var(--color-primary);
