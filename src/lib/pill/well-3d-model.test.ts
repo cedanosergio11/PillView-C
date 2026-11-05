@@ -7,6 +7,7 @@ import { computeModel } from "./physics";
 import { placedState } from "./simulate";
 import {
   flowAt,
+  genericLPath,
   liveColumns,
   locate,
   minutesAt,
@@ -34,6 +35,31 @@ describe("well path from MD/TVD pairs", () => {
     expect(end.tvd).toBeCloseTo(8000, 6);
     expect(end.x).toBeCloseTo(6000, 6);
     expect(pointAtMd(stations, 5000).x).toBeCloseTo(3000, 6);
+  });
+});
+
+describe("generic L path for the 3D view", () => {
+  it("is vertical without a BOC above TD", () => {
+    expect(genericLPath(10000, null)).toEqual([
+      { md: 0, tvd: 0, x: 0 },
+      { md: 10000, tvd: 10000, x: 0 },
+    ]);
+    expect(genericLPath(10000, 10000)).toHaveLength(2);
+  });
+
+  it("goes straight down, curves to the BOC and runs flat to TD", () => {
+    const path = genericLPath(18359, 12675);
+    const boc = pointAtMd(path, 12675);
+    const heel = pointAtMd(path, 12675 + 1000);
+    const td = pointAtMd(path, 18359);
+    // Vertical above the curve.
+    expect(pointAtMd(path, 8000)).toEqual({ x: 0, tvd: 8000 });
+    // Flat from the BOC: same drawn TVD, displacement grows one for one with MD.
+    expect(heel.tvd).toBeCloseTo(boc.tvd, 6);
+    expect(td.tvd).toBeCloseTo(boc.tvd, 6);
+    expect(td.x - boc.x).toBeCloseTo(18359 - 12675, 6);
+    // The curve lands exactly at the BOC measured depth.
+    expect(path.find((s) => Math.abs(s.md - 12675) < 1e-6)).toBeTruthy();
   });
 });
 

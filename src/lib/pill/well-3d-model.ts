@@ -44,6 +44,38 @@ export function wellPathStations(survey: SurveyPoint[], wellDepth: number): Path
   return out;
 }
 
+/**
+ * A generic L-shaped well for the 3D view: vertical to the kick-off, a short
+ * quarter-circle curve that lands at the anchor / BOC, then a horizontal lateral
+ * to TD. Measured depths are real; the drawn TVD is schematic, not to scale.
+ * Without a BOC above TD the well is drawn vertical.
+ */
+export function genericLPath(wellDepth: number, bocMd: number | null): PathStation[] {
+  const td = Math.max(1, wellDepth);
+  if (bocMd == null || !(bocMd > 0) || bocMd >= td - 1) {
+    return [
+      { md: 0, tvd: 0, x: 0 },
+      { md: td, tvd: td, x: 0 },
+    ];
+  }
+  // Tight corner: ~3% of TD, never longer than the hole above the BOC.
+  const radius = Math.min(Math.max(td * 0.03, 150), 900, (bocMd * 2 * 0.9) / Math.PI);
+  const kop = bocMd - (Math.PI / 2) * radius;
+  const out: PathStation[] = [{ md: 0, tvd: 0, x: 0 }];
+  if (kop > 0.5) out.push({ md: kop, tvd: kop, x: 0 });
+  const steps = 24;
+  for (let i = 1; i <= steps; i += 1) {
+    const theta = (i / steps) * (Math.PI / 2);
+    out.push({
+      md: kop + radius * theta,
+      tvd: kop + radius * Math.sin(theta),
+      x: radius * (1 - Math.cos(theta)),
+    });
+  }
+  out.push({ md: td, tvd: kop + radius, x: radius + (td - bocMd) });
+  return out;
+}
+
 /** Position at a measured depth, interpolated along the straight legs. */
 export function pointAtMd(stations: PathStation[], md: number): { x: number; tvd: number } {
   if (!stations.length) return { x: 0, tvd: md };

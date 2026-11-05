@@ -12,13 +12,13 @@ import type { PillModel, WellState } from "@/lib/pill/types";
 import {
   PHASE_LABEL,
   flowAt,
+  genericLPath,
   liveColumns,
   minutesAt,
   pumpPlan,
   pumpStatus,
   pumpingColumns,
   scheduleAt,
-  wellPathStations,
   type Columns,
   type Fluid,
   type Location,
@@ -54,6 +54,7 @@ function sceneColors(): SceneColors {
     grid: cssVar("--color-border", "#2a333c"),
     casing: cssVar("--color-muted-foreground", "#93a09a"),
     steel: "#9aa3ab",
+    boc: cssVar("--color-primary", "#4d8f8a"),
     fluids: {
       kmw: toRgb(pill),
       base: toRgb(fluid),
@@ -105,7 +106,11 @@ export function Well3DView({
   const placed = useMemo(() => placedState(inputs, results), [inputs, results]);
   const plan = useMemo(() => pumpPlan(placed), [placed]);
   const rows = useMemo(() => buildSchedule(inputs, results).rows, [inputs, results]);
-  const stations = useMemo(() => wellPathStations(state.survey, state.wellDepth), [state.survey, state.wellDepth]);
+  // Generic L: vertical, a short curve that lands at the anchor / BOC, lateral to TD.
+  const bocMd = anchorMd != null && anchorMd > 0 && anchorMd < state.wellDepth ? anchorMd : null;
+  const stations = useMemo(() => genericLPath(state.wellDepth, bocMd), [state.wellDepth, bocMd]);
+  const casingTvd = isNum(asNum(inputs.casingTvd)) ? asNum(inputs.casingTvd) : null;
+  const anchorTvd = isNum(asNum(inputs.anchorTvd)) ? asNum(inputs.anchorTvd) : null;
   const fallbackGpm = isNum(asNum(inputs.initialFlowRate)) ? asNum(inputs.initialFlowRate) : 200;
   const pumpDisp = isNum(asNum(inputs.pumpDisp)) && asNum(inputs.pumpDisp) > 0 ? asNum(inputs.pumpDisp) : null;
 
@@ -181,19 +186,40 @@ export function Well3DView({
   const labels = useMemo<SceneLabel[]>(() => {
     const out: SceneLabel[] = [{ id: "surface", md: 0, strong: "Surface", text: "", priority: 6 }];
     const marks = [casingMd, anchorMd, columns.bitMd, state.wellDepth].filter((m): m is number => m != null);
+    // On the lateral, labels go under the hole so they clear the BOC label above it.
+    const onLateral = (md: number) => bocMd != null && md > bocMd;
     for (const md of niceTicks(0, state.wellDepth, 6)) {
       if (md <= 0 || md >= state.wellDepth) continue;
       if (marks.some((m) => Math.abs(m - md) < state.wellDepth * 0.04)) continue;
-      out.push({ id: `tick-${md}`, md, strong: "", text: ft(md), priority: 9 });
+      out.push({ id: `tick-${md}`, md, strong: "", text: ft(md), priority: 9, side: onLateral(md) ? -1 : 1 });
     }
+    // The drawing is not to scale in TVD, so the real TVD goes in the label.
+    const mdTvd = (md: number, tvd: number | null) => `${ft(md)} MD${tvd != null ? ` · ${ft(tvd)} TVD` : ""}`;
     if (casingMd != null && casingMd > 0 && casingMd < state.wellDepth) {
-      out.push({ id: "shoe", md: casingMd, strong: "Casing shoe", text: ft(casingMd), priority: 3 });
+      out.push({ id: "shoe", md: casingMd, strong: "Casing shoe", text: mdTvd(casingMd, casingTvd), priority: 3 });
     }
-    if (anchorMd != null && anchorMd > 0 && anchorMd < state.wellDepth) {
-      out.push({ id: "anchor", md: anchorMd, strong: "Anchor", text: ft(anchorMd), priority: 4 });
+    if (bocMd != null) {
+      out.push({ id: "anchor", md: bocMd, strong: "Anchor / BOC", text: mdTvd(bocMd, anchorTvd), priority: 4 });
     }
-    if (columns.bitMd > 0) out.push({ id: "bit", md: columns.bitMd, strong: "Bit", text: ft(columns.bitMd), priority: 2 });
-    out.push({ id: "td", md: state.wellDepth, strong: "TD", text: `${ft(state.wellDepth)} MD`, priority: 5 });
+    if (columns.bitMd > 0) {
+      out.push({
+        id: "bit",
+        md: columns.bitMd,
+        strong: "Bit",
+        text: ft(columns.bitMd),
+        priority: 2,
+        side: onLateral(columns.bitMd) ? -1 : 1,
+      });
+    }
+    out.push({
+      id: "td",
+      md: state.wellDepth,
+      strong: "TD",
+      text: `${ft(state.wellDepth)} MD`,
+      priority: 5,
+      // Under the toe and ending at it, so it stays inside the view.
+      ...(bocMd != null ? { side: -1 as const, align: "end" as const } : {}),
+    });
     if (focusMd != null) {
       out.push({
         id: "pill",
@@ -205,7 +231,19 @@ export function Well3DView({
       });
     }
     return out;
-  }, [casingMd, anchorMd, columns.bitMd, state.wellDepth, focusMd, atEnd, annKmw, model.annularKmwVolume]);
+  }, [
+    casingMd,
+    casingTvd,
+    anchorMd,
+    anchorTvd,
+    bocMd,
+    columns.bitMd,
+    state.wellDepth,
+    focusMd,
+    atEnd,
+    annKmw,
+    model.annularKmwVolume,
+  ]);
 
   const view = useMemo<SceneView>(
     () => ({
@@ -214,11 +252,12 @@ export function Well3DView({
       holeId: state.holeId,
       pipeOd: state.pipeOd,
       casingMd: casingMd != null && casingMd > 0 ? casingMd : null,
+      bocMd,
       columns,
       labels,
       focusMd,
     }),
-    [stations, state.wellDepth, state.holeId, state.pipeOd, casingMd, columns, labels, focusMd],
+    [stations, state.wellDepth, state.holeId, state.pipeOd, casingMd, bocMd, columns, labels, focusMd],
   );
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -307,6 +346,11 @@ export function Well3DView({
           {phaseLabel}
         </p>
       </div>
+      <p className="-mt-1 text-[11px] text-pretty text-muted-foreground">
+        {bocMd != null
+          ? "Schematic L path: vertical, a short curve that lands at the anchor / BOC, then the lateral to TD. Labels show real MD and TVD; the drawing is not to TVD scale."
+          : "Schematic vertical path. Enter the anchor / BOC MD to draw the curve and lateral."}
+      </p>
 
       <div className="grid gap-2 rounded-lg border border-border bg-background/40 p-3">
         <div className="flex flex-wrap items-center gap-2">

@@ -14,6 +14,7 @@ import {
   Quaternion,
   RGBAFormat,
   Scene,
+  SphereGeometry,
   SRGBColorSpace,
   TorusGeometry,
   TubeGeometry,
@@ -47,6 +48,8 @@ export type SceneColors = {
   grid: string;
   casing: string;
   steel: string;
+  /** Anchor / BOC marker. */
+  boc: string;
   fluids: Record<Fluid, Rgb>;
 };
 
@@ -58,6 +61,10 @@ export type SceneLabel = {
   /** Lower draws first and wins when labels would overlap. */
   priority: number;
   tone?: "pill" | "muted";
+  /** Which side of the hole: 1 is right of travel (above a lateral), -1 the other side. */
+  side?: 1 | -1;
+  /** "end" puts the text before the point instead of after it. */
+  align?: "start" | "end";
 };
 
 export type SceneView = {
@@ -66,6 +73,8 @@ export type SceneView = {
   holeId: number;
   pipeOd: number;
   casingMd: number | null;
+  /** Anchor / BOC: the point where the curve lands, marked with a dot. */
+  bocMd: number | null;
   columns: Columns;
   labels: SceneLabel[];
   /** Depth the camera tracks when following the pill. */
@@ -181,15 +190,24 @@ export function createWellScene(
     roughness: 0.35,
   });
 
+  const bocMat = new MeshStandardMaterial({
+    color: new Color().setStyle(colors.boc),
+    emissive: new Color().setStyle(colors.boc),
+    emissiveIntensity: 0.35,
+    roughness: 0.4,
+  });
+
   const annMesh = new Mesh(undefined, annMat);
   const strMesh = new Mesh(undefined, strMat);
   const csgMesh = new Mesh(undefined, csgMat);
   const shoeMesh = new Mesh(undefined, steelMat);
   const bitMesh = new Mesh(undefined, steelMat);
+  const bocMesh = new Mesh(undefined, bocMat);
   strMesh.renderOrder = 0;
   csgMesh.renderOrder = 1;
   annMesh.renderOrder = 2;
-  scene.add(strMesh, csgMesh, annMesh, shoeMesh, bitMesh);
+  bocMesh.renderOrder = 3;
+  scene.add(strMesh, csgMesh, annMesh, shoeMesh, bitMesh, bocMesh);
   let grid: GridHelper | null = null;
 
   let view: SceneView | null = null;
@@ -239,6 +257,13 @@ export function createWellScene(
       setGeometry(shoeMesh, null);
     }
 
+    if (v.bocMd != null && v.bocMd > 0 && v.bocMd < v.wellDepth) {
+      setGeometry(bocMesh, new SphereGeometry(rHole * 0.7, 20, 14));
+      pointVec(v.stations, v.bocMd, bocMesh.position);
+    } else {
+      setGeometry(bocMesh, null);
+    }
+
     if (grid) {
       scene.remove(grid);
       grid.geometry.dispose();
@@ -254,7 +279,8 @@ export function createWellScene(
     });
     scene.add(grid);
 
-    center.set((maxX * S) / 2, (-maxTvd * S) / 2, 0);
+    // Aim a little below the middle so the lateral and its labels have room at the bottom.
+    center.set((maxX * S) / 2, -maxTvd * S * 0.54, 0);
     fitCamera(maxTvd * S, maxX * S);
     stringKey = "";
   }
@@ -280,12 +306,13 @@ export function createWellScene(
     const rect = canvas.getBoundingClientRect();
     const aspect = rect.width > 0 && rect.height > 0 ? rect.width / rect.height : 1;
     const f = Math.tan((camera.fov * Math.PI) / 360);
-    fitDistance = Math.max(height / 2 / f, width / 2 / (f * aspect), 10) * 1.12;
+    fitDistance = Math.max(height / 2 / f, width / 2 / (f * aspect), 10) * 1.22;
     camera.near = fitDistance / 200;
     camera.far = fitDistance * 20;
     camera.updateProjectionMatrix();
     controls.target.copy(center);
-    camera.position.set(center.x + fitDistance * 0.32, center.y + fitDistance * 0.12, fitDistance * 0.94);
+    // Nearly square-on, so the L reads as a right angle; a slight turn keeps the depth cue.
+    camera.position.set(center.x + fitDistance * 0.14, center.y + fitDistance * 0.06, fitDistance * 0.99);
     controls.update();
     needsRender = true;
   }
@@ -330,14 +357,17 @@ export function createWellScene(
       const el = labelEls.get(l.id);
       if (!el) continue;
       const dir = downhole(view.stations, l.md);
-      // Beside the casing, on the right of travel.
-      pointVec(view.stations, l.md, tmp).add(new Vector3(-dir.y, dir.x, 0).multiplyScalar(rCsg + rHole * 0.5));
+      // Beside the casing: right of travel by default, the other side when asked.
+      const side = l.side ?? 1;
+      pointVec(view.stations, l.md, tmp).add(
+        new Vector3(-dir.y, dir.x, 0).multiplyScalar(side * (rCsg + rHole * 0.5)),
+      );
       tmp.project(camera);
       if (tmp.z > 1 || tmp.z < -1) {
         el.hidden = true;
         continue;
       }
-      const x = ((tmp.x + 1) / 2) * w + 6;
+      const sx = ((tmp.x + 1) / 2) * w;
       const y = ((1 - tmp.y) / 2) * h;
       let size = labelSize.get(l.id);
       if (!size) {
@@ -345,9 +375,11 @@ export function createWellScene(
         size = { w: el.offsetWidth, h: el.offsetHeight };
         labelSize.set(l.id, size);
       }
+      const x = l.align === "end" ? sx - 6 - size.w : sx + 6;
       const box = { x, y: y - size.h / 2, w: size.w, h: size.h };
       // Near the right edge, put the label on the other side of the hole instead of clipping it.
       if (box.x + box.w > w - 4) box.x = Math.max(4, x - 12 - size.w - (rCsg / Math.max(fitDistance, 1)) * w);
+      if (box.x < 4) box.x = 4;
       const off = box.x > w || box.y > h || box.x + box.w < 0 || box.y + box.h < 0;
       const hit = placed.some(
         (p) => box.x < p.x + p.w + 4 && box.x + box.w + 4 > p.x && box.y < p.y + p.h && box.y + box.h > p.y,
@@ -383,6 +415,7 @@ export function createWellScene(
     if (!view) return;
     const maxTvd = Math.max(...view.stations.map((s) => s.tvd), 1);
     const maxX = Math.max(...view.stations.map((s) => s.x), 0);
+    center.set((maxX * S) / 2, -maxTvd * S * 0.54, 0);
     fitCamera(maxTvd * S, maxX * S);
   }
 
@@ -414,6 +447,7 @@ export function createWellScene(
         v.holeId,
         v.pipeOd,
         v.casingMd ?? "",
+        v.bocMd ?? "",
         v.stations.map((s) => `${s.md}:${s.tvd}`).join(","),
       ].join("|");
       if (nextWellKey !== wellKey) {
@@ -449,8 +483,10 @@ export function createWellScene(
       cancelAnimationFrame(frame);
       observer.disconnect();
       controls.dispose();
-      for (const mesh of [annMesh, strMesh, csgMesh, shoeMesh, bitMesh]) (mesh.geometry as BufferGeometry)?.dispose();
-      for (const m of [annMat, strMat, csgMat, steelMat]) m.dispose();
+      for (const mesh of [annMesh, strMesh, csgMesh, shoeMesh, bitMesh, bocMesh]) {
+        (mesh.geometry as BufferGeometry)?.dispose();
+      }
+      for (const m of [annMat, strMat, csgMat, steelMat, bocMat]) m.dispose();
       texAnn.dispose();
       texStr.dispose();
       if (grid) grid.geometry.dispose();
